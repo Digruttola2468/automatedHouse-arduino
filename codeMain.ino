@@ -70,14 +70,29 @@ Keypad teclado = Keypad(makeKeymap(keys), pinesFilas, pinesColumnas, FILAS, COLU
 
 
 // ------------------Global Variables------------------ 
-//...
-
+char TECLA;
+float temperatura,humedad;
 
 
 void setup() {
-  
+  Serial.begin(9600); //Inicialize serial port
+
+  dht.begin();
+  SPI.begin();
+  lcd.begin(20,4);
+  if(!rtc.begin())
+    Serial.println("Modulo RTC no encontrado !");
+
+  lcd.clear();
+  mfrc522.PCD_Init();
+  rtc.adjust(DateTime(__DATE__,__TIME__));
 }
 
 void loop() {
+  DateTime fecha = rtc.now();
+  TECLA = teclado.getKey();
+
+  temperatura = dht.readTemperature();
+  humedad = dht.readHumidity();
   
 }
