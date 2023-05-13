@@ -1,5 +1,8 @@
 // ------------------Librerys------------------
 
+//HC-05
+#include <SoftwareSerial.h>
+
 //LCD → Pantalla LCD con I2C
 #include <Wire.h>
 #include <LCD.h>
@@ -57,6 +60,12 @@
     FILAS → 42, 44, 46, 48
     COLUM → 43, 45, 47, 49
 
+  HC-05
+    VCC --> 5v
+    GND --> GND
+    TXD --> 10
+    RXD --> 11
+
   RELES 4
     IN1 → 40
     IN2 → 38
@@ -81,6 +90,9 @@
 
 #define PINDHT 2
 
+#define PIN_RXD 11
+#define PIN_TXD 10
+
 #define PININPUTESP1 9
 #define PININPUTESP2 8
 
@@ -98,6 +110,10 @@ DHT dht(PINDHT, DHT11);
 
 // ------------------LCD I2C------------------
 LiquidCrystal_I2C lcd (0x27, 2, 1, 0, 4, 5, 6, 7); // DIR, E, RW, RS, D4, D5, D6, D7
+
+
+// ------------------HC-05------------------
+SoftwareSerial miBT(PIN_TXD,PIN_RXD);   
 
 
 // ------------------KeyPad------------------
@@ -139,6 +155,9 @@ const long interval = 1000;
 bool ESTADO1 = false;
 bool ESTADO2 = false;
 
+//
+char DATO = '0';
+
 void setup() {
   Serial.begin(9600); //Inicialize serial port
 
@@ -149,7 +168,8 @@ void setup() {
 
   dht.begin();
   SPI.begin();
-
+  miBT.begin(38400);
+  
   lcd.setBacklightPin(3, POSITIVE); // puerto P3 de PCF8574 como positivo
   lcd.setBacklight(HIGH);   // habilita iluminacion posterior de LCD
   lcd.begin(20, 4);
@@ -256,7 +276,8 @@ void loop() {
     previousMillis = currentMillis;
   }
 
-  
+
+  //
   if(digitalRead(PININPUTESP1) == HIGH) {
     ESTADO1 = true;
   }
@@ -271,6 +292,26 @@ void loop() {
   if(digitalRead(PININPUTESP2) == LOW && ESTADO2){
     OnOffLed(PINRELE_PASILLO);
     ESTADO2 = false;
+  }
+
+  //  Bluetooth
+  if (miBT.available()){
+    DATO = miBT.read();
+
+    Serial.println(DATO);
+    
+    if(DATO == '1')
+      OnOffLed(PINRELE_PIEZA);
+    
+    if(DATO == '2')
+      OnOffLed(PINRELE_PATIO);
+    
+    if(DATO == '3')
+      OnOffLed(PINRELE_PASILLO);
+    
+    if(DATO == '4')
+      openDoorPieza();
+    
   }
 }
 
