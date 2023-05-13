@@ -25,7 +25,7 @@
 
 /*Connection modules
 
- RFID
+  RFID
     RST/Reset   RST          5
     SPI SS      SDA(SS)      53
     SPI MOSI    MOSI         51
@@ -35,29 +35,29 @@
     GND                      GND
     UID: 6C F2 DD 2B
 
- LCD I2C
+  LCD I2C
     SDA → 20
     SCL → 21
     VCC → 5v (VCC)
     GND → GND
 
- RTC3231
+  RTC3231
     SDA → 20
     SCL → 21
     VCC → 5v (VCC)
     GND → GND
 
- DHT11
+  DHT11
     VCC  → 5v
     DATA → 2
     NC   → -
     GND  → GND
 
- Keypad
+  Keypad
     FILAS → 42, 44, 46, 48
     COLUM → 43, 45, 47, 49
 
- RELES 4
+  RELES 4
     IN1 → 40
     IN2 → 38
     IN3 → 36
@@ -116,8 +116,22 @@ Keypad teclado = Keypad(makeKeymap(keys), pinesFilas, pinesColumnas, FILAS, COLU
 
 // ------------------Global Variables------------------
 char TECLA;
+char INDEX;
+char CLAVE[7];
+char claveCerradura[7] = "135791";
+int INDICE = 0;
+
+//
 int temperatura, humedad;
 
+//
+byte LecturaUID[4];
+byte Usuario1[4] = {0x6C, 0xF2, 0xDD, 0x2B};
+
+//
+unsigned long previousMillis = 0;
+unsigned long currentMillis = 0;
+const long interval = 1000;
 
 void setup() {
   Serial.begin(9600); //Inicialize serial port
@@ -126,13 +140,13 @@ void setup() {
     Serial.println("Modulo RTC no encontrado !");  // muestra mensaje de error
     while (1);         // bucle infinito que detiene ejecucion del programa
   }
-  
+
   dht.begin();
   SPI.begin();
 
   lcd.setBacklightPin(3, POSITIVE); // puerto P3 de PCF8574 como positivo
   lcd.setBacklight(HIGH);   // habilita iluminacion posterior de LCD
-  lcd.begin(16, 2);
+  lcd.begin(20, 4);
   lcd.clear();
 
   mfrc522.PCD_Init();
@@ -146,26 +160,131 @@ void setup() {
   pinMode(PINRELE_PASILLO, OUTPUT);
   pinMode(PINRELE_PATIO, OUTPUT);
   pinMode(PINRELE_PIEZA, OUTPUT);
+
+  digitalWrite(PINRELE_CERRADURA, HIGH);
+  digitalWrite(PINRELE_PASILLO, HIGH);
+  digitalWrite(PINRELE_PATIO, HIGH);
+  digitalWrite(PINRELE_PIEZA, HIGH);
+
+  previousMillis = millis();
 }
 
 void loop() {
-  // ...
+  currentMillis = millis();
+  TECLA = teclado.getKey();   // obtiene tecla presionada y asigna a variable
+
+  if ( mfrc522.PICC_IsNewCardPresent() ) {   // si hay una tarjeta presente
+    if ( mfrc522.PICC_ReadCardSerial() ) {   // si no puede obtener datos de la tarjeta
+      for (byte i = 0; i < mfrc522.uid.size; i++)  // bucle recorre de a un byte por vez el UID
+        LecturaUID[i] = mfrc522.uid.uidByte[i];   // almacena en array el byte del UID leido
+      if (comparaUID(LecturaUID, Usuario1)) {  // llama a funcion comparaUID con Usuario1
+        openDoorPieza();
+      }
+      else           // si retorna falso
+        Serial.println("No te conozco");    // muestra texto equivalente a acceso denegado
+
+      mfrc522.PICC_HaltA();     // detiene comunicacion con tarjeta
+    }
+  }
+
+  lcd.setCursor(0, 3);
+  lcd.print("Clave: ");
+  if (TECLA)        // comprueba que se haya presionado una tecla
+  {
+    if (TECLA == 'C') {
+      OnOffLed(PINRELE_PASILLO);
+    }else if(TECLA == 'D'){
+      OnOffLed(PINRELE_PATIO);
+    }else {
+      CLAVE[INDICE] = TECLA;    // almacena en array la tecla presionada
+      INDICE++;       // incrementa indice en uno
+      lcd.setCursor((INDICE + 6), 3);
+      lcd.print(TECLA);
+    }
+  }
+
+  if (INDICE == 6)      // si ya se almacenaron los 6 digitos
+  {
+    lcd.clear();
+    if (!strcmp(CLAVE, claveCerradura)) { // compara clave ingresada con clave maestra
+      openDoorPieza();
+    }
+    else {
+      Serial.println("Incorrecta");
+    }
+
+    INDICE = 0;
+  }
+
+  if ( (currentMillis - previousMillis) >= interval) {
+    DateTime fecha = rtc.now();
+    lcd.setCursor(0, 0);
+    lcd.print(fecha.day());
+    lcd.print("/");
+    lcd.print(fecha.month());
+    lcd.print("/");
+    lcd.print(fecha.year());
+    lcd.print("  ");
+    lcd.print(fecha.hour());
+    lcd.print(":");
+    lcd.print(fecha.minute());
+    lcd.print(":");
+    lcd.print(fecha.second());
+    lcd.print("  ");
+
+    temperatura = dht.readTemperature();
+    humedad = dht.readHumidity();
+
+    lcd.setCursor(0, 1);
+    lcd.print("Temp:");
+    lcd.print(temperatura);
+    lcd.print("C");
+    lcd.print("   ");
+    lcd.print("Humd:");
+    lcd.print(humedad);
+    lcd.print("%");
+
+    previousMillis = currentMillis;
+  }
+
+
+
+}
+
+void openDoorPieza() {
+  //Abir la puerta de casa
+  digitalWrite(PINRELE_CERRADURA, LOW);
+  delay(3000);
+  digitalWrite(PINRELE_CERRADURA, HIGH);
+}
+
+void OnOffLed(int PIN) {
+  digitalWrite(PIN, !digitalRead(PIN));
+}
+
+boolean comparaUID(byte lectura[], byte usuario[]) // funcion comparaUID
+{
+  for (byte i = 0; i < mfrc522.uid.size; i++) { // bucle recorre de a un byte por vez el UID
+    if (lectura[i] != usuario[i])       // si byte de UID leido es distinto a usuario
+      return (false);         // retorna falso
+  }
+  return (true);          // si los 4 bytes coinciden retorna verdadero
 }
 
 void secuenciaLeds() {
-  digitalWrite(PINLED_R,HIGH);
+  digitalWrite(PINLED_R, HIGH);
   delay(1000);
-  digitalWrite(PINLED_R,LOW);
-  delay(1000);
-
-  digitalWrite(PINLED_G,HIGH);
-  delay(1000);
-  digitalWrite(PINLED_G,LOW);
+  digitalWrite(PINLED_R, LOW);
   delay(1000);
 
-  digitalWrite(PINLED_B,HIGH);
+  digitalWrite(PINLED_G, HIGH);
   delay(1000);
-  digitalWrite(PINLED_B,LOW);
+  digitalWrite(PINLED_G, LOW);
+  delay(1000);
+
+  digitalWrite(PINLED_B, HIGH);
+  delay(1000);
+  digitalWrite(PINLED_B, LOW);
   delay(1000);
 
 }
