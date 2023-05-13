@@ -81,6 +81,8 @@
 
 #define PINDHT 2
 
+#define PININPUTESP1 9
+#define PININPUTESP2 8
 
 // ------------------MFRC522------------------
 MFRC522 mfrc522 (SS_PIN, RST_PIN);
@@ -133,6 +135,10 @@ unsigned long previousMillis = 0;
 unsigned long currentMillis = 0;
 const long interval = 1000;
 
+//
+bool ESTADO1 = false;
+bool ESTADO2 = false;
+
 void setup() {
   Serial.begin(9600); //Inicialize serial port
 
@@ -161,11 +167,14 @@ void setup() {
   pinMode(PINRELE_PATIO, OUTPUT);
   pinMode(PINRELE_PIEZA, OUTPUT);
 
+  pinMode(PININPUTESP1,INPUT);
+  pinMode(PININPUTESP2,INPUT);
+  
   digitalWrite(PINRELE_CERRADURA, HIGH);
   digitalWrite(PINRELE_PASILLO, HIGH);
   digitalWrite(PINRELE_PATIO, HIGH);
   digitalWrite(PINRELE_PIEZA, HIGH);
-
+  
   previousMillis = millis();
 }
 
@@ -247,8 +256,22 @@ void loop() {
     previousMillis = currentMillis;
   }
 
+  
+  if(digitalRead(PININPUTESP1) == HIGH) {
+    ESTADO1 = true;
+  }
+  if(digitalRead(PININPUTESP1) == LOW && ESTADO1){
+    OnOffLed(PINRELE_PATIO);
+    ESTADO1 = false;
+  }
 
-
+  if(digitalRead(PININPUTESP2) == HIGH) {
+    ESTADO2 = true;
+  }
+  if(digitalRead(PININPUTESP2) == LOW && ESTADO2){
+    OnOffLed(PINRELE_PASILLO);
+    ESTADO2 = false;
+  }
 }
 
 void openDoorPieza() {
