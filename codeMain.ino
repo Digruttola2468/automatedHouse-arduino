@@ -61,16 +61,23 @@
     COLUM → 43, 45, 47, 49
 
   HC-05
-    VCC --> 5v
-    GND --> GND
-    TXD --> 10
-    RXD --> 11
+    VCC → 5v
+    GND → GND
+    TXD → 10
+    RXD → 11
 
   RELES 4
     IN1 → 40
     IN2 → 38
     IN3 → 36
     IN4 → 34
+
+*/
+
+/*ESP8266
+  D6 → DHT11 DATA
+  D7 → PIN 9 ARDUINO MEGA
+  D8 → PIN 8 ARDUINO MEGA
 */
 
 
@@ -113,7 +120,7 @@ LiquidCrystal_I2C lcd (0x27, 2, 1, 0, 4, 5, 6, 7); // DIR, E, RW, RS, D4, D5, D6
 
 
 // ------------------HC-05------------------
-SoftwareSerial miBT(PIN_TXD,PIN_RXD);   
+SoftwareSerial miBT(PIN_TXD, PIN_RXD);
 
 
 // ------------------KeyPad------------------
@@ -135,6 +142,7 @@ Keypad teclado = Keypad(makeKeymap(keys), pinesFilas, pinesColumnas, FILAS, COLU
 // ------------------Global Variables------------------
 char TECLA;
 char INDEX;
+char SUBINDEX;
 char CLAVE[7];
 char claveCerradura[7] = "135791";
 int INDICE = 0;
@@ -145,6 +153,11 @@ int temperatura, humedad;
 //
 byte LecturaUID[4];
 byte Usuario1[4] = {0x6C, 0xF2, 0xDD, 0x2B};
+
+//
+int reloj[] = {1, 2, 2021, 18, 55}; //{Day, Mounth, Year, Hour, Minute}
+int indexReloj = 0;
+int indexCursor = 0;
 
 //
 unsigned long previousMillis = 0;
@@ -158,18 +171,34 @@ bool ESTADO2 = false;
 //
 char DATO = '0';
 
+//
+bool menuFechaHorario = false;
+bool menuAlarma = false;
+
+//  openDoorPieza
+//secuenciaLeds showDateTimeLCD showTempHumdLCD
+void leerTarjeta();
+void getESP8266();
+void bluetooth();
+void openDoorPieza();
+void OnOffLed(int PIN);
+boolean comparaUID(byte lectura[], byte usuario[]);
+void secuenciaLeds();
+void showDateTimeLCD();
+void showTempHumdLCD();
+
 void setup() {
   Serial.begin(9600); //Inicialize serial port
 
   if (! rtc.begin()) {       // si falla la inicializacion del modulo
     Serial.println("Modulo RTC no encontrado !");  // muestra mensaje de error
-    while (1);         // bucle infinito que detiene ejecucion del programa
+    //while (1);         // bucle infinito que detiene ejecucion del programa
   }
 
   dht.begin();
   SPI.begin();
   miBT.begin(38400);
-  
+
   lcd.setBacklightPin(3, POSITIVE); // puerto P3 de PCF8574 como positivo
   lcd.setBacklight(HIGH);   // habilita iluminacion posterior de LCD
   lcd.begin(20, 4);
@@ -187,53 +216,69 @@ void setup() {
   pinMode(PINRELE_PATIO, OUTPUT);
   pinMode(PINRELE_PIEZA, OUTPUT);
 
-  pinMode(PININPUTESP1,INPUT);
-  pinMode(PININPUTESP2,INPUT);
-  
+  pinMode(PININPUTESP1, INPUT);
+  pinMode(PININPUTESP2, INPUT);
+
   digitalWrite(PINRELE_CERRADURA, HIGH);
   digitalWrite(PINRELE_PASILLO, HIGH);
   digitalWrite(PINRELE_PATIO, HIGH);
   digitalWrite(PINRELE_PIEZA, HIGH);
-  
+
   previousMillis = millis();
 }
 
 void loop() {
-  currentMillis = millis();
+  currentMillis = millis();   // Obtiene millis
   TECLA = teclado.getKey();   // obtiene tecla presionada y asigna a variable
 
-  if ( mfrc522.PICC_IsNewCardPresent() ) {   // si hay una tarjeta presente
-    if ( mfrc522.PICC_ReadCardSerial() ) {   // si no puede obtener datos de la tarjeta
-      for (byte i = 0; i < mfrc522.uid.size; i++)  // bucle recorre de a un byte por vez el UID
-        LecturaUID[i] = mfrc522.uid.uidByte[i];   // almacena en array el byte del UID leido
-      if (comparaUID(LecturaUID, Usuario1)) {  // llama a funcion comparaUID con Usuario1
-        openDoorPieza();
+  leerTarjeta();
+  getESP8266();
+  bluetooth();
+
+
+  if (TECLA) {       // comprueba que se haya presionado una tecla
+
+    if (menuFechaHorario) {
+      INDEX = TECLA;
+      indexCursor++;
+      if (TECLA == '#') {
+        menuFechaHorario = false;
+        lcd.clear();
       }
-      else           // si retorna falso
-        Serial.println("No te conozco");    // muestra texto equivalente a acceso denegado
-
-      mfrc522.PICC_HaltA();     // detiene comunicacion con tarjeta
+    } else if (menuAlarma) {
+      if (TECLA == '1') {
+        Serial.println("Seleccionaste agregar alarma");
+      }
+      if (TECLA == '2') {
+        Serial.println("Seleccionaste Ver Alarmas");
+      }
+      if (TECLA == '3') {
+        menuAlarma = false;
+        lcd.clear();
+      }
+    } else {
+      if (TECLA == 'C') {
+        OnOffLed(PINRELE_PASILLO);
+      } else if (TECLA == 'D') {
+        OnOffLed(PINRELE_PATIO);
+      } else if (TECLA == 'A') {
+        menuFechaHorario = true;
+        lcd.clear();
+      } else if (TECLA == 'B') {
+        menuAlarma = true;
+        lcd.clear();
+      }
+      else {
+        CLAVE[INDICE] = TECLA;    // almacena en array la tecla presionada
+        INDICE++;       // incrementa indice en uno
+        lcd.setCursor((INDICE + 6), 3);
+        lcd.print(TECLA);
+      }
     }
+
   }
 
-  lcd.setCursor(0, 3);
-  lcd.print("Clave: ");
-  if (TECLA)        // comprueba que se haya presionado una tecla
-  {
-    if (TECLA == 'C') {
-      OnOffLed(PINRELE_PASILLO);
-    }else if(TECLA == 'D'){
-      OnOffLed(PINRELE_PATIO);
-    }else {
-      CLAVE[INDICE] = TECLA;    // almacena en array la tecla presionada
-      INDICE++;       // incrementa indice en uno
-      lcd.setCursor((INDICE + 6), 3);
-      lcd.print(TECLA);
-    }
-  }
-
-  if (INDICE == 6)      // si ya se almacenaron los 6 digitos
-  {
+  if (INDICE == 6) {     // si ya se almacenaron los 6 digitos
     lcd.clear();
     if (!strcmp(CLAVE, claveCerradura)) { // compara clave ingresada con clave maestra
       openDoorPieza();
@@ -241,77 +286,109 @@ void loop() {
     else {
       Serial.println("Incorrecta");
     }
-
     INDICE = 0;
   }
 
-  if ( (currentMillis - previousMillis) >= interval) {
-    DateTime fecha = rtc.now();
+  if (menuFechaHorario) {
     lcd.setCursor(0, 0);
-    lcd.print(fecha.day());
-    lcd.print("/");
-    lcd.print(fecha.month());
-    lcd.print("/");
-    lcd.print(fecha.year());
-    lcd.print("  ");
-    lcd.print(fecha.hour());
-    lcd.print(":");
-    lcd.print(fecha.minute());
-    lcd.print(":");
-    lcd.print(fecha.second());
-    lcd.print("  ");
-
-    temperatura = dht.readTemperature();
-    humedad = dht.readHumidity();
+    lcd.print("12/02/2023  12:30:40");
 
     lcd.setCursor(0, 1);
-    lcd.print("Temp:");
-    lcd.print(temperatura);
-    lcd.print("C");
-    lcd.print("   ");
-    lcd.print("Humd:");
-    lcd.print(humedad);
-    lcd.print("%");
+    lcd.print("Fecha: ");
 
+    lcd.setCursor((indexCursor + 6), 1);
+    lcd.print(INDEX);
+
+    /*
+      int reloj[] = {1, 2, 2021, 18, 55}; //{Day, Mounth, Year, Hour, Minute}
+      int indexReloj = 0;
+      int indexCursor = 0;
+    */
+
+    lcd.setCursor(0, 2);
+    lcd.print("Horario: ");
+
+    lcd.setCursor(0, 3);
+    lcd.print("# Cancelar");
+
+
+    return;
+  }
+
+  if (menuAlarma) {
+    lcd.setCursor(0, 0);
+    lcd.print("Alarmas");
+    lcd.setCursor(0, 1);
+    lcd.print("1. Agregar Alarma");
+    lcd.setCursor(0, 2);
+    lcd.print("2. Ver Alarmas");
+    lcd.setCursor(0, 3);
+    lcd.print("3. Atras");
+    return;
+  }
+
+  lcd.setCursor(0, 3);
+  lcd.print("Clave: ");
+  if ( (currentMillis - previousMillis) >= interval) {
+    showDateTimeLCD();
+    showTempHumdLCD();
     previousMillis = currentMillis;
   }
 
 
+}
+
+void getESP8266() {
   //
-  if(digitalRead(PININPUTESP1) == HIGH) {
+  if (digitalRead(PININPUTESP1) == HIGH) {
     ESTADO1 = true;
   }
-  if(digitalRead(PININPUTESP1) == LOW && ESTADO1){
+  if (digitalRead(PININPUTESP1) == LOW && ESTADO1) {
     OnOffLed(PINRELE_PATIO);
     ESTADO1 = false;
   }
 
-  if(digitalRead(PININPUTESP2) == HIGH) {
+  if (digitalRead(PININPUTESP2) == HIGH) {
     ESTADO2 = true;
   }
-  if(digitalRead(PININPUTESP2) == LOW && ESTADO2){
+  if (digitalRead(PININPUTESP2) == LOW && ESTADO2) {
     OnOffLed(PINRELE_PASILLO);
     ESTADO2 = false;
   }
+}
 
+void bluetooth() {
   //  Bluetooth
-  if (miBT.available()){
+  if (miBT.available()) {
     DATO = miBT.read();
 
-    Serial.println(DATO);
-    
-    if(DATO == '1')
+    if (DATO == '1')
       OnOffLed(PINRELE_PIEZA);
-    
-    if(DATO == '2')
+
+    if (DATO == '2')
       OnOffLed(PINRELE_PATIO);
-    
-    if(DATO == '3')
+
+    if (DATO == '3')
       OnOffLed(PINRELE_PASILLO);
-    
-    if(DATO == '4')
+
+    if (DATO == '4')
       openDoorPieza();
-    
+
+  }
+}
+
+void leerTarjeta() {
+  //
+  if ( mfrc522.PICC_IsNewCardPresent() ) {
+    if ( mfrc522.PICC_ReadCardSerial() ) {
+      for (byte i = 0; i < mfrc522.uid.size; i++)  // bucle recorre de a un byte por vez el UID
+        LecturaUID[i] = mfrc522.uid.uidByte[i];
+
+      if (comparaUID(LecturaUID, Usuario1))   // llama a funcion comparaUID con Usuario1
+        openDoorPieza();
+
+      mfrc522.PICC_HaltA();     // detiene comunicacion con tarjeta
+    }
   }
 }
 
@@ -326,8 +403,7 @@ void OnOffLed(int PIN) {
   digitalWrite(PIN, !digitalRead(PIN));
 }
 
-boolean comparaUID(byte lectura[], byte usuario[]) // funcion comparaUID
-{
+boolean comparaUID(byte lectura[], byte usuario[]) {
   for (byte i = 0; i < mfrc522.uid.size; i++) { // bucle recorre de a un byte por vez el UID
     if (lectura[i] != usuario[i])       // si byte de UID leido es distinto a usuario
       return (false);         // retorna falso
@@ -353,8 +429,22 @@ void secuenciaLeds() {
 
 }
 
-void mostrarHoraFecha() {
+void showDateTimeLCD() {
   DateTime fecha = rtc.now();
+  lcd.setCursor(0, 0);
+  lcd.print(fecha.day());
+  lcd.print("/");
+  lcd.print(fecha.month());
+  lcd.print("/");
+  lcd.print(fecha.year());
+  lcd.print("  ");
+  lcd.print(fecha.hour());
+  lcd.print(":");
+  lcd.print(fecha.minute());
+  lcd.print(":");
+  lcd.print(fecha.second());
+  lcd.print("  ");
+
   Serial.print(fecha.day());
   Serial.print("/");
   Serial.print(fecha.month());
@@ -366,16 +456,27 @@ void mostrarHoraFecha() {
   Serial.print(fecha.minute());
   Serial.print(":");
   Serial.print(fecha.second());
-  Serial.println();
+  Serial.print("  ");
 }
 
-void mostrarTemperatura(int temperatura, int humedad) {
-  Serial.print("Temperatura: ");
+void showTempHumdLCD() {
+  temperatura = dht.readTemperature();
+  humedad = dht.readHumidity();
+
+  lcd.setCursor(0, 1);
+  lcd.print("Temp:");
+  lcd.print(temperatura);
+  lcd.print("C");
+  lcd.print("   ");
+  lcd.print("Humd:");
+  lcd.print(humedad);
+  lcd.print("%");
+
+  Serial.print("Temp:");
   Serial.print(temperatura);
-  Serial.print("°C");
-  Serial.print("  ");
-  Serial.print("Humedad: ");
-  Serial.print(humedad);
-  Serial.print(" %");
+  Serial.print("C");
   Serial.println();
+  Serial.print("Humd:");
+  Serial.print(humedad);
+  Serial.print("%");
 }
